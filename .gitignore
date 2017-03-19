@@ -1,0 +1,11 @@
+.jxbrowser-data/**
+.metadata/**
+.metadata/
+.tempFiles
+RemoteSystemsTempFiles/
+Debug
+*.xml
+*.log
+*.map
+
+
