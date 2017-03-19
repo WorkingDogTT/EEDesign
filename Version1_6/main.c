@@ -64,12 +64,15 @@ float ampResult;//=(max...-min...)/1024*2.5
 float ampResult_old;//restore the last freq value
 float phaResult_V;//=(pha+pha...)/5
 float phaResult_old_V;//retore the last pha value
+int ampResult_dB;
+int ampResult_old_dB;
+int x,x2,y,y2;//绘图时使用的临时变量
 static int stopbitsCount=0;
 /*
  * main.c
  */
 //declaration some function
-void UART_OnTX(char *pbuf,unsigned char length);
+inline void UART_OnTX(char *pbuf,unsigned char length);
 void UART_OnRX();
 int main(void) {
     WDTCTL = WDTPW | WDTHOLD;	// Stop watchdog timer
@@ -152,7 +155,9 @@ int main(void) {
         TA1CTL |= TAIE;
         //这里设置的是P1.0乘法器输出
         //P1.5为滤波网络的输出
+    while(1){
 
+    }
 	return 0;
 }
 
@@ -188,26 +193,32 @@ inline void genDAC(){
 void freqSet(){
     TA0CTL&=~MC_3;
     TA1CTL&=~MC_3;
-    ADC10CTL0&=~(ENC|ADC10SC|ADC10ON|ADC10CT);//取消DTC的配置
-    ADC10CTL1&=~(INCH_5);
-    ampResult=((maxAmpADResult-minAmpADResult)/2048.0)*2.5;//已经做过除2处理
+    TA0CCR0=0;//多加两行归0的语句确保其失效成功
+    TA1CCR0=0;
+    ADC10CTL0&=~(ENC|ADC10SC|ADC10ON);//取消AD的配置，将AD暂停下来
+    ADC10CTL1&=~(INCH_5);//去掉转换通道的设定，将当前的转换引脚换为P1.0
+    ampResult=(((float)(maxAmpADResult-minAmpADResult))/2048.0)*2.5;//已经做过除2处理计算当前的电压值,使用强制类型转换，转为浮点数的乘法
     int i=0;
+    //进入5次循环取平均值的检测模式，对于橡胶的检测需要取平均值较为合理
     for(i=0;i<5;i++){
         ADC10CTL0|=(ENC|ADC10SC|ADC10ON);
-        while(ADC10CTL1&ADC10BUSY);
+        while(ADC10CTL1&ADC10BUSY);//等待DAC转换完成
         phaADResult=ADC10MEM;
-        avePhaADResult=(unsigned int)(phaADResult+avePhaADResult)/2;
+        avePhaADResult=(phaADResult+avePhaADResult);//取和
     }
-    phaResult_V=(avePhaADResult/1024.0)*2.5;
-    snprintf(sendBuff,sendBuffLength,"amp.txt=\"%d\"",(int)(-20*log10(ampResult*100.0)));
+    avePhaADResult=avePhaADResult/5;//计算器平均值
+    phaResult_V=(avePhaADResult/1024.0)*2.5;//计算电压值
+    //
+    snprintf(sendBuff,sendBuffLength,"amp.txt=\"%d\"",(int)(-20*log10(ampResult*100.0)));//将当前值转换为对数幅度并输出
     UART_OnTX(sendBuff,20);
     snprintf(sendBuff,sendBuffLength,"pha.txt=\"%d\"",(int)(phaResult_V*100.0));
     UART_OnTX(sendBuff,15);
+    //
     maxAmpADResult=0;//退出中断后清空最大值
     avePhaADResult=0;
-    minAmpADResult=1024;
+    minAmpADResult=1024;//将最小值设置为最大值确保渠道的是最小值
     //重新配置ADC
-    ADC10CTL1 |= INCH_5 ;//这里使用的是主时钟2分频8MHZ，采样保持时间为1/8MHZ * 16 =2us 满足最少3.9us的要求  首先采集的是滤波网络的输出
+    ADC10CTL1 |= INCH_5 ;//将通道重新变为P1.5去采样被测网络的输出
     //==========================================
     //在函数调用结尾时重新开放定时器
     TA1CCR0=65535;//点频状态下设置为满量程增大计算间隔以获得更稳定的波形
@@ -228,21 +239,22 @@ void freqChange(){
     TA1CCR0=0;
     ADC10CTL0&=~(ENC|ADC10SC|ADC10ON);
     ADC10CTL1&=~(INCH_5);
-    ampResult=((maxAmpADResult-minAmpADResult)/2048.0)*2.5;//已经经过除2处理了
+    ampResult=(((float)(maxAmpADResult-minAmpADResult))/2048.0)*2.5;//已经经过除2处理了
     int i=0;
     for(i=0;i<5;i++){
         ADC10CTL0|=(ENC|ADC10SC|ADC10ON);
         while(ADC10CTL1&ADC10BUSY);
-        avePhaADResult=(avePhaADResult+ADC10MEM)/2;
+        avePhaADResult+=ADC10MEM;
     }
-    phaResult_V=(avePhaADResult/1024.0)*2.5;
-    float temp=0.0;
-    temp=maxPoint/((1/(float)Freq_now)/0.00001);
+    avePhaADResult=avePhaADResult/5;
+    phaResult_V=((float)avePhaADResult/1024.0)*2.5;
+    float temp=0.0;//根据当前频率值实时计算频率
+    temp=maxPoint/((1/(float)Freq_now)/0.00001);//计算当前频率所需要的间隔
     int setSinINTInterval=0;
-    setSinINTInterval=(int)temp;
+    setSinINTInterval=(int)temp;//当前间隔的整数部分
     int setSinDECInterval=0;
-    setSinDECInterval=(int)(temp*1000.0-setSinINTInterval*1000);
-    sinIntInterval=setSinINTInterval;
+    setSinDECInterval=(int)(temp*1000.0-setSinINTInterval*1000);//当前间隔的小数部分
+    sinIntInterval=setSinINTInterval;//完成语句的赋值操作
     sinDecInterval=setSinDECInterval;
     Freq_now+=scan_Step;
     if(Freq_now>2000){
@@ -254,18 +266,26 @@ void freqChange(){
         snprintf(sendBuff,sendBuffLength,"bug.txt=Freq<=10");
         UART_OnTX(sendBuff,20);
     }else{
-         snprintf(sendBuff,sendBuffLength,"line %d,%d,%d,%d,31",(int)(100*log10(Freq_now-scan_Step)),(int)(3*20*log10(ampResult_old)+30),(int)(100*log10(Freq_now)),(int)(3*20*log10(ampResult)+30));
+        //使用log函数将值发送出去
+         x=(int)(100*log10(Freq_now-scan_Step));
+         x2=(int)(100*log10(Freq_now));
+         ampResult_dB=(int)(3*20*log10(ampResult));
+         ampResult_old_dB=(int)(3*20*log10(ampResult_old));
+         y=ampResult_old_dB+30;
+         y2=ampResult_dB+30;
+         snprintf(sendBuff,sendBuffLength,"line %d,%d,%d,%d,31",x,y,x2,y2);
          UART_OnTX(sendBuff,11);
-         snprintf(sendBuff,sendBuffLength,"line %d,%d,%d,%d,2016",(int)(100*log10(Freq_now-scan_Step)),(int)(phaResult_old_V),(int)(100*log10(Freq_now)),(int)(phaResult_V));
+         snprintf(sendBuff,sendBuffLength,"line %d,%d,%d,%d,2016",x,(int)(phaResult_old_V),x2,(int)(phaResult_V));
          UART_OnTX(sendBuff,11);
          snprintf(sendBuff,sendBuffLength,"n0.val=%d",Freq_now);
          UART_OnTX(sendBuff,11);
-         if((20*log10(ampResult)<=3)&&(20*log10(ampResult_old)>3)){
+         if((y<=3&&y2>3)||(y>=3&&y2<3)){
+             //找到截止频率点
              snprintf(sendBuff,sendBuffLength,"n1.val=%d",Freq_now);
              UART_OnTX(sendBuff,11);
          }
     }
-    ampResult_old=ampResult;
+    ampResult_old=ampResult;//保留旧的值
     phaResult_old_V=phaResult_V;
     maxAmpADResult=0;//退出中断后清空最大值
     avePhaADResult=0;
@@ -281,13 +301,13 @@ void freqChange(){
     TA1CTL|=MC_1;
 }
 
-void UART_OnTX(char *pbuf,unsigned char length){
+inline void UART_OnTX(char *pbuf,unsigned char length){
     unsigned char i;
     for(i=0;i<length;i++){
         if(*(pbuf + i)==0x00) break;
         while(UCA0STAT & UCBUSY);
         UCA0TXBUF = *(pbuf + i);
-        *(pbuf + i)=0x00;
+        *(pbuf + i)=0x00;//在发送结束时清空
 
     }
     for(i=0;i<3;i++){//send Stop Bits
@@ -379,7 +399,8 @@ void stateDect(){
         TA1CTL|=MC_1;
         ADC10CTL0|=ADC10ON;
         break;
-
+    default:
+        break;
     }
 }
 
@@ -395,7 +416,7 @@ inline void cmdMatch(){
     recvBuffIndex=0;
 }
 
-void UART_OnRX(){
+inline void UART_OnRX(){
     recvBuff[recvBuffIndex]=UCA0RXBUF;
     if(recvBuff[recvBuffIndex]==0xFF) {
         stopbitsCount++;
