@@ -143,7 +143,7 @@ int main(void) {
 //        ADC10CTL0 |= SREF_1 | ADC10SHT_2 | REFON | REF2_5V |ADC10ON ;//这里的设置是
 //        ADC10CTL1 |= INCH_5  | ADC10DIV_0 | ADC10SSEL_2 | CONSEQ_0 ;//这里使用的是主时钟1分频16MHZ，采样保持时间为1/16MHZ * 16 =1us 满足最少3.9us的要求  首先采集的是滤波网络的输出
 //        /*****************************************************************
-         * init TA without start TA
+        / * init TA without start TA
          ****************************************************************/
         TA0CTL|=TACLR;
         TA1CTL|=TACLR;
