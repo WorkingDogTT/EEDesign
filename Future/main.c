@@ -1,12 +1,12 @@
 #include <msp430.h> 
 #include "MSP430G2553.h"
 #include "stdio.h"
-
+#include "math.h"
 #define maxPoint 360 //这里定义的是点数的最大值
 #define sendBuffLength 35 //预留的发送缓存区的大小
 #define TA0CCR0_VAL 4  //定义生成sin波形的中断的持续时间
-#define INTCOUNT_VAL_LowFreq 3750 //定义的是在低频状态下多少次sin中断后触发变频函数
-#define INTCOUNT_VAL_HighFreq 250
+#define INTCOUNT_VAL_LowFreq 5000 //定义的是在低频状态下多少次sin中断后触发变频函数
+#define INTCOUNT_VAL_HighFreq 2000
 
 unsigned char state;//全局的状态机
 /*in 0x00 system ready
@@ -49,13 +49,14 @@ const unsigned char sinLib[]={128 ,125 ,123 ,121 ,119 ,116 ,114 ,112 ,110 ,108 ,
 char recvBuff[10]={0};//初始化接收缓存区
 char sendBuff[35]={0};//初始化发送缓存区
 unsigned char sendData=0x00;//这里是用来存放即将要发送给DAC的sin数据
-int scan_step=0;//这里是用来设定扫频时的频率间隔的
+int sweep_Step=10;//这里是用来设定扫频时的频率间隔的
 unsigned int recvBuffIndex=0x00;//用来设置接收缓存器的指示器
 int sinIntInterval=0;//用来标识sin指针的整数间隔
 int sinDecInterval=102;//用来标识sin指针的小数间隔
 int sinDecSum=0;     //用来标识sin指针的小数计数和
 int sinIndex=0;      //sin列表的指针
 int Freq_now=10;      //用来标识当前的频率值
+int Freq_past=0;      //用来表示上一次触发变频中断的频率值
 unsigned int ampADResult=0;  //直接将AD幅度转换的结果值放在这里P1.3
 unsigned int maxAmpADResult=0;//比较出来的最大的AD采样值
 unsigned int minAmpADResult=1024;//比较出来的最小的AD采样值
@@ -67,8 +68,21 @@ float phaResult_V=0.0;        //这里存放的是角度采样的到的电压值
 float phaResult_V_old=0.0;    //这里存放的是上一个频率值采样得到的相位的电压值
 int x=0,x2=0,y=0,y2=0;        //这里是用来标记绘图时的X,Y坐标值
 int INTCount=0;//用来标记当前的中断次数，主要目的是减少定时器的使用，尽量在一个定时器中完成所有功能
+int maxINTCount=3750;
 /*使用中断计数的方法来确认当前是否需要变频或者进行其他操作*/
+unsigned int max_min=0;
+unsigned int mul_5=0;
+float div_4096=0.0;
+float pointInterval=0.0;//临时变量，用来计算当前的sin表间隔
+int setSinINTInterval=0;
+int setSinDECInterval=0;
+unsigned int mul_9=0.0;
+float getDec;
+int mul_1000=0;
 
+void genDAC();
+void freqChange();
+void UART_OnTX(char *pbuf,unsigned char length);
 
 /*
  * main.c
@@ -82,16 +96,16 @@ int main(void) {
      * init UART
      *******************************************************************/
     //====启动并配置两个IO口的功能========//
-//    P1SEL = BIT1 | BIT2;
-//    P1SEL2 = BIT1 | BIT2;
-//    //=====设置UART时钟源为外置晶振有更高的准确率======//
-//    UCA0BR0 = 0x04 ;        //500k/115200=4.34          UCBRx=  INT(4.34)=4
-//    UCA0BR1 = 0x00;         //未知时钟源的设定   ACLK？ UCLK？
-//    UCA0CTL1 |= UCSSEL_1;   //选择外置时钟源作为BRCLK
-//    //ACLK设置方式为：UCA0BR1 = UCSSEL_1
-//    UCA0MCTL = UCBRS1 + UCBRS0;    //UCBRSx=round((4.34-4)x8)=round(2.72)=3
-//    UCA0CTL1 &= ~UCSWRST;          //清除软件复位
-//    IE2 |= UCA0RXIE ;    //开启接收中断
+    P1SEL = BIT1 | BIT2;
+    P1SEL2 = BIT1 | BIT2;
+    //=====设置UART时钟源为外置晶振有更高的准确率======//
+    UCA0BR0 = 0x04 ;        //500k/115200=4.34          UCBRx=  INT(4.34)=4
+    UCA0BR1 = 0x00;         //未知时钟源的设定   ACLK？ UCLK？
+    UCA0CTL1 |= UCSSEL_1;   //选择外置时钟源作为BRCLK
+    //ACLK设置方式为：UCA0BR1 = UCSSEL_1
+    UCA0MCTL = UCBRS1 + UCBRS0;    //UCBRSx=round((4.34-4)x8)=round(2.72)=3
+    UCA0CTL1 &= ~UCSWRST;          //清除软件复位
+   // IE2 |= UCA0RXIE ;    //开启接收中断
 
     /******************************************************************
      * init DAC Pin
@@ -146,6 +160,7 @@ int main(void) {
 void genDAC(){
     P1OUT|=BIT0;//测试管脚置位
     /*转换ADCP1.3端口测量幅值*/
+    ADC10CTL1&=~CONSEQ_3;//手动清除单通道重复转换模式
     ADC10CTL0|=ADC10ON | ENC | ADC10SC;//启动ADC的转换
     if(sinIndex>=maxPoint) sinIndex-=maxPoint;//超出的部分直接减掉，保留附加相移
     sendData=sinLib[sinIndex];//取出当前的sin值
@@ -167,11 +182,128 @@ void genDAC(){
     if(ampADResult>maxAmpADResult) maxAmpADResult=ampADResult;
     if(ampADResult<minAmpADResult) minAmpADResult=ampADResult;
     /*至此，程序运行时间为1.636us（典型值）*/
-
+    INTCount++;
+    if(INTCount>=maxINTCount){
+        /*进入到更改频率的模式时，第一件事就是关闭TA中断*/
+        TA0CCR0=0;//关闭TA中断，防止多次中短触发
+        TA0IV=0;
+        TA0CTL&=~MC_1;
+        INTCount=0;
+        freqChange();        /*
+        switch(state){
+        case 0xA1://处于点频输出模式
+            break;
+        case 0xA2://处于扫频输出模式
+            freqChange();
+            break;
+        default:
+            break;
+        }
+        */
+        //退出时恢复定时器的中断
+        TA0CCR0=TA0CCR0_VAL;
+        TA0CTL|=MC_1;
+    }
     P1OUT&=BIT0;
 }
 
+void freqChange(){
+    /*将AD的通道弄回P1.0用来采集相角的幅度*/
+    ADC10CTL0&=~(ADC10ON|ENC|ADC10SC);//先关闭ADC10避免不必要的问题
+    ADC10CTL1 &=~INCH_3;//因为这里只是使用了INCH_3 故直接清除位即可
+    ampResult_old=ampResult;//保留下过去的幅度AD计算值
+    max_min=maxAmpADResult-minAmpADResult;
+    mul_5=max_min*5;
+    ampResult=mul_5/4096.0;
+   // ampResult=((float)(maxAmpADResult-minAmpADResult)/2048.0)*2.5;//利用切换的期间进行复杂的数学运算
+    int i=0;
 
+    for(i=0;i<5;i++){
+        ADC10CTL1&=~CONSEQ_3;//手动清除单通道重复转换模式
+        ADC10CTL0 |= (ENC|ADC10ON|ADC10SC);
+        while(ADC10CTL1&ADC10BUSY);
+        phaADResult+=ADC10MEM;
+        ADC10CTL0 &= ~(ENC|ADC10ON|ADC10SC);
+    }
+    phaResult_V_old=phaResult_V;//保留下过去的角度AD测量值
+    phaResult_V=phaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
+//
+    /*对频率最处理*/
+    Freq_past=Freq_now;//在变频之前先保存当前的频率值
+    Freq_now+=sweep_Step;//进行扫频的步进
+    if(Freq_now>2000){
+        //当频率值超过2000时，将强制其回到开头
+        Freq_now=10;
+    }
+    /*间隔值计算部分*/
+    //计算间隔的值
+    mul_9=Freq_now*9;
+    pointInterval=mul_9/2500.0;
+    //temp=maxPoint/((1.0/(float)Freq_now)/0.00001);//包含小数部分的计算值
+
+    setSinINTInterval=(int)pointInterval;//取出temp中的整数部分
+    getDec=pointInterval-setSinINTInterval;//取出其中的小数部分
+//    setSinDECInterval=(int)(pointInterval*1000.0-setSinINTInterval*1000);//取出temp中的小数部分
+    sinIntInterval=setSinINTInterval;
+    mul_1000=getDec*1000;//小数部分扩大为整数
+    sinDecInterval=mul_1000;//赋值
+    /*完成计算值*/
+    if(Freq_now>10){
+        /*下面发送当前的绘制曲线命令*/
+        x=(int)(Freq_past/10+100);
+        y=(int)(ampResult_old*20);
+        x2=(int)(Freq_now/10+100);
+        y2=(int)(ampResult*20);
+
+        snprintf(sendBuff,sendBuffLength,"line %d,%d,%d,%d,31",x,y,x2,y2);
+        UART_OnTX(sendBuff,35);
+        snprintf(sendBuff,sendBuffLength,"n0.val=%d",Freq_now);
+        UART_OnTX(sendBuff,15);
+        /*下面计算截止频率并且将其发送出去*/
+        int a1=0;//用来存放幅度增益的DB值来寻找3dB点
+        int a2=0;
+        a1=-20*log10(ampResult_old);
+        a2=-20*log10(ampResult);
+        if((a1<3&&a2>=3)){
+            //这里是低通滤波器的情况
+            snprintf(sendBuff,sendBuffLength,"n1.val=%d",Freq_now);
+            UART_OnTX(sendBuff,15);
+        }else if(a1=3&&a2<3){
+            //这里是高通滤波器的情况
+            snprintf(sendBuff,sendBuffLength,"n1.val=%d",Freq_past);
+            UART_OnTX(sendBuff,15);
+        }
+    }
+    /*下面是结束当前计算时进行的清空处理*/
+    maxAmpADResult=0;
+    minAmpADResult=1024;
+    //phaADResult每次在这个函数里面就会得到重新赋值故无需理会
+    ADC10CTL0&=~(ADC10ON|ENC|ADC10SC);//首先完全关闭ADC来进行下一步的操作
+    ADC10CTL1|=INCH_3;//将其重新配置到P1.3端口去采集幅度值
+    ADC10CTL0|=ADC10ON|ENC;//重新打开ADC，利用空闲时间让其进入就绪状态
+    if(Freq_now>=100) maxINTCount=INTCOUNT_VAL_HighFreq;
+    else maxINTCount=INTCOUNT_VAL_LowFreq;
+    //恢复定时器的值在外面恢复
+
+}
+
+void UART_OnTX(char *pbuf,unsigned char length){
+    unsigned char i;
+    for(i=0;i<length;i++){
+        if(*(pbuf + i)==0x00){
+            break;
+        }else{
+            while(UCA0STAT & UCBUSY);//等待上一个字节发送完毕
+            UCA0TXBUF = *(pbuf + i);
+            *(pbuf + i)=0x00;//顺带清空缓存区
+        }
+    }
+    for(i=0;i<3;i++){
+        /*最后发送3个停止位*/
+        while(UCA0STAT & UCBUSY);
+        UCA0TXBUF = 0xFF;
+    }
+}
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void TIMER0_A1_ISR_HOOK(void){
     /*首先关闭总中断*/
