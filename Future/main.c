@@ -66,7 +66,8 @@ float ampResult_old=0.0;      //这里存放的是上一个频率值采样得到的就得幅度值
 float phaResult_V=0.0;        //这里存放的是角度采样的到的电压值
 float phaResult_V_old=0.0;    //这里存放的是上一个频率值采样得到的相位的电压值
 int x=0,x2=0,y=0,y2=0;        //这里是用来标记绘图时的X,Y坐标值
-
+int INTCount=0;//用来标记当前的中断次数，主要目的是减少定时器的使用，尽量在一个定时器中完成所有功能
+/*使用中断计数的方法来确认当前是否需要变频或者进行其他操作*/
 
 
 /*
@@ -122,20 +123,17 @@ int main(void) {
      * ADC10SSEL_2 以主时钟MCLK作为时钟源 则转换速率为500K
      * CONSEQ_2单通道重复转换模式
      */
-//    ADC10CTL0 |= SREF_1 | ADC10SHT_2 | REFON | REF2_5V |ADC10ON ;//这里的设置是
-//    ADC10CTL1 |= INCH_5  | ADC10DIV_0 | ADC10SSEL_2 | CONSEQ_0 ;//这里使用的是主时钟1分频16MHZ，采样保持时间为1/16MHZ * 16 =1us 满足最少3.9us的要求  首先采集的是滤波网络的输出
+    ADC10CTL0 |= SREF_1 | ADC10SHT_2 | REFON | REF2_5V |ADC10ON ;//这里的设置是
+    ADC10CTL1 |= INCH_3  | ADC10DIV_0 | ADC10SSEL_2 | CONSEQ_0 ;//这里使用的是主时钟1分频16MHZ，采样保持时间为1/16MHZ * 16 =1us 满足最少3.9us的要求  首先采集的是滤波网络的输出
     /*****************************************************************
     / * init TA without start TA
      ****************************************************************/
     TA0CTL|=TACLR;
-    TA1CTL|=TACLR;
     //设置TA0用于固定时长发生中断来产生和发送正弦信号 间隔为10us 理论上时间充裕
     //不在此处使用MC模式配置以暂停定时器
     TA0CTL |= TASSEL_1 | ID_0 | MC_1;
     TA0CTL |= TAIE;
     TA0CCR0=TA0CCR0_VAL;
-    TA1CTL |= TASSEL_1 | ID_1 ;//降低扫频速度
-    TA1CTL |= TAIE;
     //这里设置的是P1.0乘法器输出
     //P1.5为滤波网络的输出
     _enable_interrupts();
@@ -147,6 +145,8 @@ int main(void) {
 
 void genDAC(){
     P1OUT|=BIT0;//测试管脚置位
+    /*转换ADCP1.3端口测量幅值*/
+    ADC10CTL0|=ADC10ON | ENC | ADC10SC;//启动ADC的转换
     if(sinIndex>=maxPoint) sinIndex-=maxPoint;//超出的部分直接减掉，保留附加相移
     sendData=sinLib[sinIndex];//取出当前的sin值
     /*
@@ -161,8 +161,16 @@ void genDAC(){
         sinDecSum-=1000;
         sinIndex++;
     }
+    /*确认ADC10转换完成的情况下将值取出并比较获得最大最小值*/
+    while(ADC10CTL1&ADC10BUSY);
+    ampADResult=ADC10MEM;
+    if(ampADResult>maxAmpADResult) maxAmpADResult=ampADResult;
+    if(ampADResult<minAmpADResult) minAmpADResult=ampADResult;
+    /*至此，程序运行时间为1.636us（典型值）*/
+
     P1OUT&=BIT0;
 }
+
 
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void TIMER0_A1_ISR_HOOK(void){
