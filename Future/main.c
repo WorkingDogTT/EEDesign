@@ -174,8 +174,9 @@ void genDAC(){
      * @使用位运算将sin值输出给DAC
      */
     P1OUT=(sendData&0x18)<<2;
-    P2OUT=(((sendData&0x80)>>2|(sendData&0x20)<<2)&0xE0)>>2|((sendData&0x40)>>2|(sendData&0x01)<<2);
 
+//    P2OUT=(((sendData&0x80)>>2|(sendData&0x20)<<2)&0xE0)>>2|((sendData&0x40)>>2|(sendData&0x01)<<2);
+    P2OUT=(sendData&0x01)<<2 | (sendData&0x22) | (sendData&0x44)>>2 | (sendData&0x80)>>4;
     sinIndex+=sinIntInterval;//做整数部分的直接相加
     sinDecSum+=sinDecInterval;//计算小数部分的和值
     if(sinDecSum>=1000){//当小数部分的和值大于1的时候将在整数部分加1进位，同时自身保留下溢出项
