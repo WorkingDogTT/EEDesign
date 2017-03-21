@@ -5,8 +5,8 @@
 #define maxPoint 360 //这里定义的是点数的最大值
 #define sendBuffLength 35 //预留的发送缓存区的大小
 #define TA0CCR0_VAL 4  //定义生成sin波形的中断的持续时间
-#define INTCOUNT_VAL_LowFreq 5000 //定义的是在低频状态下多少次sin中断后触发变频函数
-#define INTCOUNT_VAL_HighFreq 2000
+#define INTCOUNT_VAL_LowFreq 4000 //定义的是在低频状态下多少次sin中断后触发变频函数
+#define INTCOUNT_VAL_HighFreq 2500
 
 unsigned char state;//全局的状态机
 /*in 0x00 system ready
@@ -68,7 +68,7 @@ float phaResult_V=0.0;        //这里存放的是角度采样的到的电压值
 float phaResult_V_old=0.0;    //这里存放的是上一个频率值采样得到的相位的电压值
 int x=0,x2=0,y=0,y2=0;        //这里是用来标记绘图时的X,Y坐标值
 int INTCount=0;//用来标记当前的中断次数，主要目的是减少定时器的使用，尽量在一个定时器中完成所有功能
-int maxINTCount=3750;
+unsigned int maxINTCount=3750;
 /*使用中断计数的方法来确认当前是否需要变频或者进行其他操作*/
 unsigned int max_min=0;
 unsigned int mul_5=0;
@@ -82,7 +82,13 @@ int mul_1000=0;
 
 void genDAC();
 void freqChange();
+void freqSet();
 void UART_OnTX(char *pbuf,unsigned char length);
+void UART_OnRX();
+void stateDect();
+inline void cmdMatch();
+
+
 
 /*
  * main.c
@@ -105,7 +111,7 @@ int main(void) {
     //ACLK设置方式为：UCA0BR1 = UCSSEL_1
     UCA0MCTL = UCBRS1 + UCBRS0;    //UCBRSx=round((4.34-4)x8)=round(2.72)=3
     UCA0CTL1 &= ~UCSWRST;          //清除软件复位
-   // IE2 |= UCA0RXIE ;    //开启接收中断
+    IE2 |= UCA0RXIE ;    //开启接收中断
 
     /******************************************************************
      * init DAC Pin
@@ -147,7 +153,7 @@ int main(void) {
     //不在此处使用MC模式配置以暂停定时器
     TA0CTL |= TASSEL_1 | ID_0 | MC_1;
     TA0CTL |= TAIE;
-    TA0CCR0=TA0CCR0_VAL;
+//    TA0CCR0=TA0CCR0_VAL;
     //这里设置的是P1.0乘法器输出
     //P1.5为滤波网络的输出
     _enable_interrupts();
@@ -189,9 +195,10 @@ void genDAC(){
         TA0IV=0;
         TA0CTL&=~MC_1;
         INTCount=0;
-        freqChange();        /*
+        //freqChange();        /*
         switch(state){
         case 0xA1://处于点频输出模式
+            freqSet();
             break;
         case 0xA2://处于扫频输出模式
             freqChange();
@@ -199,7 +206,7 @@ void genDAC(){
         default:
             break;
         }
-        */
+
         //退出时恢复定时器的中断
         TA0CCR0=TA0CCR0_VAL;
         TA0CTL|=MC_1;
@@ -223,7 +230,6 @@ void freqChange(){
         ADC10CTL0 |= (ENC|ADC10ON|ADC10SC);
         while(ADC10CTL1&ADC10BUSY);
         phaADResult+=ADC10MEM;
-        ADC10CTL0 &= ~(ENC|ADC10ON|ADC10SC);
     }
     phaResult_V_old=phaResult_V;//保留下过去的角度AD测量值
     phaResult_V=phaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
@@ -281,10 +287,140 @@ void freqChange(){
     ADC10CTL0&=~(ADC10ON|ENC|ADC10SC);//首先完全关闭ADC来进行下一步的操作
     ADC10CTL1|=INCH_3;//将其重新配置到P1.3端口去采集幅度值
     ADC10CTL0|=ADC10ON|ENC;//重新打开ADC，利用空闲时间让其进入就绪状态
-    if(Freq_now>=100) maxINTCount=INTCOUNT_VAL_HighFreq;
+    if(Freq_now>=1000) maxINTCount=INTCOUNT_VAL_HighFreq;
     else maxINTCount=INTCOUNT_VAL_LowFreq;
     //恢复定时器的值在外面恢复
 
+}
+
+/*
+ * 下面处理的是点频状态输出
+ * 点频输出为每65535*4*0.000002 500ms以上进入一次中断发送一次采样数据
+ * 这个中断函数只能被genDAC调用
+ */
+void freqSet(){
+    ADC10CTL0&=~(ADC10ON|ADC10SC|ENC);//首先关闭ADC
+    ADC10CTL1&=~INCH_3;//重新配置为P1.0端口去采集乘法器的相位信息
+    ADC10CTL0|=(ADC10ON);//启动ADC，利用计算时间等待期准备就绪
+    int i=0;
+    max_min=maxAmpADResult-minAmpADResult;
+    mul_5=max_min*5;
+    ampResult=mul_5/4096.0;
+    for(i=0;i<5;i++){
+        ADC10CTL1&=~CONSEQ_3;//手动清除单通道重复转换模式
+        ADC10CTL0 |= (ENC|ADC10ON|ADC10SC);
+        while(ADC10CTL1&ADC10BUSY);
+        phaADResult+=ADC10MEM;
+    }
+    phaResult_V_old=phaResult_V;//保留下过去的角度AD测量值
+    phaResult_V=phaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
+
+    snprintf(sendBuff,sendBuffLength,"amp.txt=%d",(int)(ampResult*100));
+    UART_OnTX(sendBuff,15);
+    snprintf(sendBuff,sendBuffLength,"pha.txt=%d",(int)(phaResult_V*100));
+    UART_OnTX(sendBuff,15);
+    maxINTCount=65535;
+
+}
+
+/*
+ * 此函数用来根据当前的输入检测现在的变化
+ */
+void stateDect(){
+    switch(state){
+    case 0x00:
+        TA0CCR0=0;
+        ADC10CTL0&=~(ENC|ADC10SC);
+        break;
+    case 0xA1:
+        if(recvBuff[0]==0x71){
+            unsigned int tempFreq;
+            tempFreq=recvBuff[1]+recvBuff[2]*256;
+            Freq_now=(int)tempFreq;
+            /*间隔值计算部分*/
+            //计算间隔的值
+            mul_9=Freq_now*9;
+            pointInterval=mul_9/2500.0;
+            //temp=maxPoint/((1.0/(float)Freq_now)/0.00001);//包含小数部分的计算值
+
+            setSinINTInterval=(int)pointInterval;//取出temp中的整数部分
+            getDec=pointInterval-setSinINTInterval;//取出其中的小数部分
+        //    setSinDECInterval=(int)(pointInterval*1000.0-setSinINTInterval*1000);//取出temp中的小数部分
+            sinIntInterval=setSinINTInterval;
+            mul_1000=getDec*1000;//小数部分扩大为整数
+            sinDecInterval=mul_1000;//赋值
+            maxINTCount=(unsigned int)65535;
+        }else{
+            snprintf(sendBuff,sendBuffLength,"page 3");
+            UART_OnTX(sendBuff,6);
+            snprintf(sendBuff,sendBuffLength,"bug.txt=recv %d at 0xA1",(int)recvBuff[1]);
+            UART_OnTX(sendBuff,15);
+        }
+
+        break;
+    case 0xA2:
+        if(recvBuff[0]==0x71){
+            if(recvBuff[1]==0x01){
+                sweep_Step=10;
+            }else if(recvBuff[1]==0x02){
+                sweep_Step=100;
+            }
+            Freq_now=10;
+            maxINTCount=INTCOUNT_VAL_LowFreq;
+        }else{
+            snprintf(sendBuff,sendBuffLength,"page 3");
+            UART_OnTX(sendBuff,6);
+            snprintf(sendBuff,sendBuffLength,"bug.txt=recv %d at 0xA2",(int)recvBuff[1]);
+            UART_OnTX(sendBuff,15);
+        }
+        break;
+    default:
+        break;
+    }
+    if(state==0xA1||state==0xA2) {
+        TA0R=0;
+        TA0CCR0=TA0CCR0_VAL;
+        TA0CTL|=MC_1;
+    }
+}
+
+/*
+ * 此函数用于检测当前的指令状态
+ */
+inline void cmdMatch(){
+    switch(recvBuff[0]){
+    case 0x00:TA0CCR0=0;state=0x00;break;//关闭唯一的定时器
+    case 0xA0:TA0CCR0=0;state=0x00;break;
+    case 0xA1:state=0xA1;break;//标志位置到点频输出模式
+    case 0xA2:state=0xA2;break;//标志位置到扫频输出模式
+    case 0xB0:state=0x00;break;
+    default:
+        stateDect();
+        break;
+    }
+    recvBuffIndex=0;
+}
+
+
+/*
+ *此函数用于接收数据
+ */
+void UART_OnRX(){
+    static int stopBitsCount=0;//用来记录当前停止位的个数
+    recvBuff[recvBuffIndex]=UCA0RXBUF;
+    if(recvBuff[recvBuffIndex]==0XFF){
+        stopBitsCount++;
+    }else{
+        stopBitsCount=0;
+    }
+
+    if(stopBitsCount>=3||recvBuffIndex>9){
+        //接收到停止位个数合适或者超出接收缓冲区的大小
+        cmdMatch();
+        _nop();
+    }else{
+        recvBuffIndex++;
+    }
 }
 
 void UART_OnTX(char *pbuf,unsigned char length){
@@ -316,5 +452,23 @@ __interrupt void TIMER0_A1_ISR_HOOK(void){
     default:break;
     }
     /*结束中断后开启总中断*/
+    _enable_interrupts();
+}
+
+#pragma vector=USCIAB0RX_VECTOR
+__interrupt void USCI0RX_ISR_HOOK(void)
+{
+    _disable_interrupts();
+    TA0CTL&=~MC_3;
+    TA0CCR0=0;
+    ADC10CTL0&=~(ENC|ADC10ON|ADC10SC);
+    //进入到控制状态先停下当前所有工作
+    if (IFG2 & UCA0RXIFG) {
+       IFG2&=~UCA0RXIFG;   // 手动清除标志位
+       UART_OnRX();// 调用Tx事件处理函数
+
+    }
+    else if (IFG2 & UCB0RXIFG) {
+    }
     _enable_interrupts();
 }
