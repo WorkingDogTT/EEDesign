@@ -48,24 +48,25 @@ const unsigned char sinLib[]={128 ,125 ,123 ,121 ,119 ,116 ,114 ,112 ,110 ,108 ,
 
 char recvBuff[10]={0};//初始化接收缓存区
 char sendBuff[35]={0};//初始化发送缓存区
-unsigned char sendData=0x00;//这里是用来存放即将要发送给DAC的sin数据
-int sweep_Step=10;//这里是用来设定扫频时的频率间隔的
+volatile unsigned char sendData=0x00;//这里是用来存放即将要发送给DAC的sin数据
+volatile int sweep_Step=10;//这里是用来设定扫频时的频率间隔的
 unsigned int recvBuffIndex=0x00;//用来设置接收缓存器的指示器
 int sinIntInterval=0;//用来标识sin指针的整数间隔
 int sinDecInterval=102;//用来标识sin指针的小数间隔
-int sinDecSum=0;     //用来标识sin指针的小数计数和
-int sinIndex=0;      //sin列表的指针
-int Freq_now=10;      //用来标识当前的频率值
+volatile int sinDecSum=0;     //用来标识sin指针的小数计数和
+volatile int sinIndex=0;      //sin列表的指针
+volatile int Freq_now=10;      //用来标识当前的频率值
 int Freq_past=0;      //用来表示上一次触发变频中断的频率值
-unsigned int ampADResult=0;  //直接将AD幅度转换的结果值放在这里P1.3
-unsigned int maxAmpADResult=0;//比较出来的最大的AD采样值
-unsigned int minAmpADResult=1024;//比较出来的最小的AD采样值
-unsigned int phaADResult=0;  //直接将AD的相位采样值放在这里
-unsigned int avephaADResult=0;//相位的采样使用的是采样5次后取平均值的办法
-float ampResult=0.0;          //这里存放的是转换过的幅度最终检测结果
-float ampResult_old=0.0;      //这里存放的是上一个频率值采样得到的就得幅度值
-float phaResult_V=0.0;        //这里存放的是角度采样的到的电压值
-float phaResult_V_old=0.0;    //这里存放的是上一个频率值采样得到的相位的电压值
+long ampADResult=0;  //直接将AD幅度转换的结果值放在这里P1.3
+unsigned char ADCFlag=0x00;//这个是用来观察当前应当转换哪一个通道的
+long maxAmpADResult=0;//比较出来的最大的AD采样值
+long minAmpADResult=1024;//比较出来的最小的AD采样值
+long phaADResult=0;  //直接将AD的相位采样值放在这里
+long avephaADResult=0;//相位的采样使用的是采样5次后取平均值的办法
+double ampResult=0.0;          //这里存放的是转换过的幅度最终检测结果
+double ampResult_old=0.0;      //这里存放的是上一个频率值采样得到的就得幅度值
+double phaResult_V=0.0;        //这里存放的是角度采样的到的电压值
+double phaResult_V_old=0.0;    //这里存放的是上一个频率值采样得到的相位的电压值
 int x=0,x2=0,y=0,y2=0;        //这里是用来标记绘图时的X,Y坐标值
 int INTCount=0;//用来标记当前的中断次数，主要目的是减少定时器的使用，尽量在一个定时器中完成所有功能
 unsigned int maxINTCount=3750;
@@ -73,12 +74,12 @@ unsigned int maxINTCount=3750;
 /***这里是一些中间变量***/
 unsigned int max_min=0;
 unsigned int mul_5=0;
-float div_4096=0.0;
-float pointInterval=0.0;//临时变量，用来计算当前的sin表间隔
+double div_4096=0.0;
+double pointInterval=0.0;//临时变量，用来计算当前的sin表间隔
 int setSinINTInterval=0;
 int setSinDECInterval=0;
-unsigned int mul_9=0.0;
-float getDec;
+long mul_9=0.0;
+double getDec;
 int mul_1000=0;
 unsigned char tempData=0x00;
 
@@ -90,7 +91,10 @@ void UART_OnRX();
 void stateDect();
 inline void cmdMatch();
 
-
+/*
+ * 程序写法注意：
+ * 在主函数中执行数据处理、复杂数学运算等等，在中断中置位标志位，主函数中判断标志位并进行相应的处理
+ */
 
 /*
  * main.c
@@ -174,16 +178,21 @@ int main(void) {
             switch(state){
             case 0xA1://处于点频输出模式
                 freqSet();
+                //退出时恢复定时器的中断
+                TA0R=0;//延缓进入中断的时间
+                TA0CCR0=TA0CCR0_VAL;
+                TA0CTL|=MC_1;
                 break;
             case 0xA2://处于扫频输出模式
                 freqChange();
+                //退出时恢复定时器的中断
+                TA0R=0;//延缓进入中断的时间
+                TA0CCR0=TA0CCR0_VAL;
+                TA0CTL|=MC_1;
                 break;
             default:
                 break;
             }
-            //退出时恢复定时器的中断
-            TA0CCR0=TA0CCR0_VAL;
-            TA0CTL|=MC_1;
             _enable_interrupts();
         }
     }
@@ -201,7 +210,7 @@ inline void genDAC(){
      * @使用位运算将sin值输出给DAC
      */
     tempData=(sendData&0x18)<<2;
-    P1OUT=tempData;
+    P1OUT=tempData;//引入中间变量来尽可能保证平稳输出
 //    P2OUT=(((sendData&0x80)>>2|(sendData&0x20)<<2)&0xE0)>>2|((sendData&0x40)>>2|(sendData&0x01)<<2);
     tempData=(sendData&0x01)<<2 | (sendData&0x22) | (sendData&0x44)>>2 | (sendData&0x80)>>4;
     P2OUT=tempData;
@@ -215,34 +224,49 @@ inline void genDAC(){
         sinIndex++;
     }
     /*确认ADC10转换完成的情况下将值取出并比较获得最大最小值*/
-    while(ADC10CTL1&ADC10BUSY);
-    ampADResult=ADC10MEM;
-    if(ampADResult>maxAmpADResult) maxAmpADResult=ampADResult;
-    if(ampADResult<minAmpADResult) minAmpADResult=ampADResult;
+    switch(ADCFlag){
+    case 0x00:
+        while(ADC10CTL1&ADC10BUSY);
+        ampADResult=ADC10MEM;
+        ADC10CTL0&=~(ADC10ON|ENC);
+        ADC10CTL1&=~INCH_3;
+        if(ampADResult>maxAmpADResult) maxAmpADResult=ampADResult;
+        if(ampADResult<minAmpADResult) minAmpADResult=ampADResult;
+        ADC10CTL0|=ADC10ON|ENC;
+        ADCFlag=0x01;
+        break;
+    case 0x01:
+        while(ADC10CTL1&ADC10BUSY);
+        phaADResult=ADC10MEM;
+        ADC10CTL0&=~(ADC10ON|ENC);
+        ADC10CTL1|=INCH_3;
+        avephaADResult+=phaADResult;
+        avephaADResult=avephaADResult/2;
+        ADC10CTL0|=ADC10ON|ENC;
+        ADCFlag=0x01;
+        break;
+    default:
+        break;
+    }
+    P1OUT&=~BIT4;  //WR1管脚先置0
+    //_delay_cycles(8);
+    P1OUT|=BIT4;
+    P1OUT&=~BIT7;
+    //_delay_cycles(8);
+    P1OUT|=BIT7;
     /*至此，程序运行时间为1.636us（典型值）*/
     INTCount++;
     P1OUT&=BIT0;
 }
 
 void freqChange(){
-    /*将AD的通道弄回P1.0用来采集相角的幅度*/
-    ADC10CTL0&=~(ADC10ON|ENC|ADC10SC);//先关闭ADC10避免不必要的问题
-    ADC10CTL1 &=~INCH_3;//因为这里只是使用了INCH_3 故直接清除位即可
     ampResult_old=ampResult;//保留下过去的幅度AD计算值
     max_min=maxAmpADResult-minAmpADResult;
     mul_5=max_min*5;
     ampResult=mul_5/4096.0;
    // ampResult=((float)(maxAmpADResult-minAmpADResult)/2048.0)*2.5;//利用切换的期间进行复杂的数学运算
-    int i=0;
-
-    for(i=0;i<5;i++){
-        ADC10CTL1&=~CONSEQ_3;//手动清除单通道重复转换模式
-        ADC10CTL0 |= (ENC|ADC10ON|ADC10SC);
-        while(ADC10CTL1&ADC10BUSY);
-        phaADResult+=ADC10MEM;
-    }
     phaResult_V_old=phaResult_V;//保留下过去的角度AD测量值
-    phaResult_V=phaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
+    phaResult_V=avephaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
 //
     /*对频率最处理*/
     Freq_past=Freq_now;//在变频之前先保存当前的频率值
@@ -279,8 +303,8 @@ void freqChange(){
         /*下面计算截止频率并且将其发送出去*/
         int a1=0;//用来存放幅度增益的DB值来寻找3dB点
         int a2=0;
-        a1=-20*log10(ampResult_old);
-        a2=-20*log10(ampResult);
+        a1=(-20)*log10(ampResult_old);
+        a2=(-20)*log10(ampResult);
         if((a1<3&&a2>=3)){
             //这里是低通滤波器的情况
             snprintf(sendBuff,sendBuffLength,"n1.val=%d",Freq_now);
@@ -295,9 +319,6 @@ void freqChange(){
     maxAmpADResult=0;
     minAmpADResult=1024;
     //phaADResult每次在这个函数里面就会得到重新赋值故无需理会
-    ADC10CTL0&=~(ADC10ON|ENC|ADC10SC);//首先完全关闭ADC来进行下一步的操作
-    ADC10CTL1|=INCH_3;//将其重新配置到P1.3端口去采集幅度值
-    ADC10CTL0|=ADC10ON|ENC;//重新打开ADC，利用空闲时间让其进入就绪状态
     if(Freq_now>=1000) maxINTCount=INTCOUNT_VAL_HighFreq;
     else maxINTCount=INTCOUNT_VAL_LowFreq;
     //恢复定时器的值在外面恢复
@@ -311,30 +332,16 @@ void freqChange(){
  */
 void freqSet(){
     ADC10CTL0&=~(ADC10ON|ADC10SC|ENC);//首先关闭ADC
-    ADC10CTL1&=~INCH_3;//重新配置为P1.0端口去采集乘法器的相位信息
-    ADC10CTL0|=(ADC10ON);//启动ADC，利用计算时间等待期准备就绪
-    int i=0;
     max_min=maxAmpADResult-minAmpADResult;
     mul_5=max_min*5;
     ampResult=mul_5/4096.0;
-    for(i=0;i<5;i++){
-        ADC10CTL1&=~CONSEQ_3;//手动清除单通道重复转换模式
-        ADC10CTL0 |= (ENC|ADC10ON|ADC10SC);
-        while(ADC10CTL1&ADC10BUSY);
-        phaADResult+=ADC10MEM;
-    }
     phaResult_V_old=phaResult_V;//保留下过去的角度AD测量值
-    phaResult_V=phaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
-
+    phaResult_V=avephaADResult/2048.0;//已经除过5的均值了 利用除法得到平均值
     snprintf(sendBuff,sendBuffLength,"amp.txt=%d",(int)(ampResult*100));
     UART_OnTX(sendBuff,15);
     snprintf(sendBuff,sendBuffLength,"pha.txt=%d",(int)(phaResult_V*100));
     UART_OnTX(sendBuff,15);
     maxINTCount=65535;
-    //重新使能ADC10
-    ADC10CTL0 &=~ (ADC10ON|ENC);
-    ADC10CTL1|=INCH_3;
-    ADC10CTL0|=ADC10ON|ENC;
 
 }
 
