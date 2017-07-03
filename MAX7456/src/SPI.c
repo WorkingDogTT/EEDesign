@@ -22,7 +22,7 @@
 */
 #include "global.h"
 #ifdef  SOFT_SPI                //Begin of SOFT_SPI
-static unsigned char SPI_Delay=1;          //=0.0625us 实际上达不到这个，依据当前设置，SPI时钟频率为162.2KHz
+static unsigned char SPI_Delay=1;          //=0.0625us 实际上达不到这个，依据当前设置，SPI时钟频率为279.1KHz
 
 //-----对从机使能CS（STE）引脚宏定义-----
 #define SPI_CS_HIGH         P2OUT |=BIT4
@@ -85,7 +85,7 @@ static void delay_us(void)
 {
     unsigned int i=0;
     for(i=0;i<SPI_Delay;i++)
-        __delay_cycles(DelayMCLK_FREQ/10000000);        //us延时
+        __delay_cycles(DelayMCLK_FREQ/16000000);        //us延时
 }
 /******************************************************************************************************
  * 名       称：Tx_Char()
