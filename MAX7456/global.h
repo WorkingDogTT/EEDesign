@@ -11,7 +11,7 @@
 
 
 #include "msp430g2553.h"
-#include "MAX_SPI.h"_
+#include "MAX_SPI.h"
 #include "SPI.h"
 #include "MAX7456.h"
 #include "SystemUtils.h"
