@@ -22,7 +22,7 @@
 */
 #include "global.h"
 #ifdef  SOFT_SPI                //Begin of SOFT_SPI
-static unsigned char SPI_Delay=16;          //=1us
+static unsigned char SPI_Delay=1;          //=0.0625us 实际上达不到这个，依据当前设置，SPI时钟频率为162.2KHz
 
 //-----对从机使能CS（STE）引脚宏定义-----
 #define SPI_CS_HIGH         P2OUT |=BIT4
@@ -98,6 +98,8 @@ static void delay_us(void)
 void Tx_Char(unsigned char data)
 {
     unsigned char i=0;
+    SPI_CS_Low();//SPI使能发送
+    delay_us();
     for(i=0;i<8;i++)
     {
         SPI_CLK_LOW;            delay_us();
@@ -106,6 +108,9 @@ void Tx_Char(unsigned char data)
         delay_us();
         SPI_CLK_HIGH;       delay_us();
     }
+    SPI_CS_High();//SPI 结束发送
+    delay_us();
+    SPI_CLK_LOW;
 }
 /******************************************************************************************************
  * 名       称：Rx_Char()
@@ -119,6 +124,7 @@ unsigned char Rx_Char()
 {
     unsigned char i=0;
     unsigned char Temp=0;
+    SPI_CS_Low();//SPI 使能
     for(i=0;i<8;i++)
     {
 //      SPI_CLK_HIGH;       delay_us();
@@ -131,6 +137,9 @@ unsigned char Rx_Char()
             Temp |=BIT0;            //置1
 //      else Temp &=~BIT0;  //可省略，默认就是0
     }
+    SPI_CS_High();//SPI 失能
+    delay_us();//确保有效
+    SPI_CLK_LOW;
     return Temp;
 }
 /******************************************************************************************************

@@ -9,15 +9,15 @@
 
 unsigned char write_max7456(unsigned char *address, unsigned char *data){
     (*address)=(*address)&0x7F;
-    SPI_TxFrame(address,8);
-    SPI_TxFrame(data,8);
+    SPI_TxFrame(address,1);
+    SPI_TxFrame(data,1);
     return 1;
 }
 
 unsigned char read_max7456(unsigned char *address, unsigned char *data){
     (*address)=(*address) | 0x80;
-    SPI_TxFrame(address,8);
-    SPI_RxFrame(data,8);
+    SPI_TxFrame(address,1);
+    SPI_RxFrame(data,1);
     return 1;
 }
 

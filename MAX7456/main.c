@@ -15,7 +15,7 @@ int main(void) {
     _enable_interrupts();
     while(1){
         write_node_B();
-
+        _nop();
     }
 	return 0;
 }
