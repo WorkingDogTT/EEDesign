@@ -22,8 +22,8 @@
 */
 #include "global.h"
 #ifdef  SOFT_SPI                //Begin of SOFT_SPI
-static unsigned char SPI_Delay=50;          //=5us
-#define DelayMCLK_FREQ          12000000        //用于精确延时函数
+static unsigned char SPI_Delay=16;          //=1us
+
 //-----对从机使能CS（STE）引脚宏定义-----
 #define SPI_CS_HIGH         P2OUT |=BIT4
 #define SPI_CS_LOW          P2OUT &=~BIT4

@@ -1,5 +1,5 @@
-#include <msp430.h> 
 
+#include "global.h"
 /*
  * main.c
  */
@@ -8,9 +8,14 @@ int main(void) {
     /***************************************************************
     * init SystemClock
     **************************************************************/
-    BCSCTL1 |= CALBC1_16MHZ; DCOCTL |= CALDCO_16MHZ;
+    BCSCTL1 |= CALBC1_16MHZ;
+    DCOCTL |= CALDCO_16MHZ;
     BCSCTL3 = XT2S_0 | LFXT1S_2 | XCAP_3;//ACLK ÎªÄÚ²¿VLO
+    SPI_init();
+    _enable_interrupts();
+    while(1){
+        write_node_B();
 
-
+    }
 	return 0;
 }
