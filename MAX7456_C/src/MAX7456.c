@@ -5,11 +5,11 @@
  *      Author: tt
  */
 #include "global.h"
-void test_node_B(void){
+void test_node_C(void){
     address=0x81;
     read_max7456(&address,&data);
 }
-unsigned char write_node_B(void){
+unsigned char write_node_C(void){
        address=0x00;
        data=0x48;
        write_max7456(&address,&data);
@@ -19,7 +19,7 @@ unsigned char write_node_B(void){
         write_max7456(&address,&data);
         //写入DMAL[7：0]=xxx确定位置
         address=0x06;
-        data=0x21;
+        data=0x37;
         write_max7456(&address,&data);
         //写入DMM[5:3]=xxx设置本地背景控制
         address=0x04;
@@ -27,7 +27,7 @@ unsigned char write_node_B(void){
         write_max7456(&address,&data);
         //写入DMDI[7：0]=0x20
         address=0x07;
-        data=0x0C;
+        data=0x0D;
         write_max7456(&address,&data);
         //写入DMAH[0]=X
         address=0x05;
@@ -35,7 +35,7 @@ unsigned char write_node_B(void){
         write_max7456(&address,&data);
         //写入DMAL[7：0]=xxx确定位置
         address=0x06;
-        data=0x21;
+        data=0x37;
         write_max7456(&address,&data);
         //写入DMM[5:3]=xxx设置本地背景控制
         address=0x04;
@@ -43,12 +43,12 @@ unsigned char write_node_B(void){
         write_max7456(&address,&data);
         //写入DMDI[7：0]=0x20
         address=0x07;
-        data=0x0C;
+        data=0x0D;
         write_max7456(&address,&data);
     return 1;
 }
 
-unsigned char write_node_B_clear(void){
+unsigned char write_node_C_clear(void){
            address=0x00;
            data=0x08;
            write_max7456(&address,&data);

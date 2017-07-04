@@ -10,5 +10,6 @@
 
 extern unsigned char write_node_B(void);
 extern unsigned char write_node_B_clear(void);
+extern void test_node_B(void);
 
 #endif /* SRC_MAX7456_H_ */

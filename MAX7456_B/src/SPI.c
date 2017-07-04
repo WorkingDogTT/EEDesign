@@ -22,7 +22,7 @@
 */
 #include "global.h"
 #ifdef  SOFT_SPI                //Begin of SOFT_SPI
-static unsigned char SPI_Delay=1;          //=0.0625us 实际上达不到这个，依据当前设置，SPI时钟频率为279.1KHz
+static unsigned char SPI_Delay=16;          //=0.0625us 实际上达不到这个，依据当前设置，SPI时钟频率为279.1KHz
 
 //-----对从机使能CS（STE）引脚宏定义-----
 #define SPI_CS_HIGH         P2OUT |=BIT4
@@ -73,6 +73,14 @@ void SPI_CS_Low(void)
 {
     SPI_CS_LOW;
 }
+
+void SPI_CLK_High(void){
+    SPI_CLK_HIGH;
+}
+
+void SPI_CLK_Low(void){
+    SPI_CLK_LOW;
+}
 /******************************************************************************************************
  * 名       称：delay_us()
  * 功       能：us级延时
@@ -99,17 +107,23 @@ void Tx_Char(unsigned char data)
 {
     unsigned char i=0;
     SPI_CS_Low();//SPI使能发送
-    delay_us();
+    //delay_us();
     for(i=0;i<8;i++)
     {
-        SPI_CLK_LOW;            delay_us();
-        if((data<<i)&BIT7)          SPI_SIMO_HIGH;
-        else        SPI_SIMO_LOW;
+        SPI_CLK_LOW;
         delay_us();
-        SPI_CLK_HIGH;       delay_us();
+        if((data<<i)&BIT7)
+            SPI_SIMO_HIGH;
+        else
+            SPI_SIMO_LOW;
+        delay_us();
+        SPI_CLK_HIGH;
+        delay_us();
+        delay_us();
+        //delay_us();
     }
-    SPI_CS_High();//SPI 结束发送
-    delay_us();
+   // SPI_CS_High();//SPI 结束发送
+    //delay_us();
     SPI_CLK_LOW;
 }
 /******************************************************************************************************
@@ -130,14 +144,21 @@ unsigned char Rx_Char()
 //      SPI_CLK_HIGH;       delay_us();
 //      SPI_CLK_LOW ;       delay_us();
 
-        SPI_CLK_LOW ;       delay_us();
-        SPI_CLK_HIGH;       delay_us();
+        SPI_CLK_LOW ;
+        delay_us();
+        delay_us();
+        delay_us();
+        delay_us();
+        SPI_CLK_HIGH;
+        delay_us();
+        delay_us();
+        delay_us();
         Temp=Temp<<1;       //移位，这句需放在前面
         if(SPI_SOMI_IN )            //先收高位
             Temp |=BIT0;            //置1
 //      else Temp &=~BIT0;  //可省略，默认就是0
     }
-    SPI_CS_High();//SPI 失能
+    //SPI_CS_High();//SPI 失能
     delay_us();//确保有效
     SPI_CLK_LOW;
     return Temp;
@@ -232,8 +253,8 @@ void SPI_LowSpeed()
 unsigned char  *SPI_Tx_Buffer;
 unsigned char  *SPI_Rx_Buffer;
 //-----定义待发送/接收的字节数-----
-unsigned char  SPI_Tx_Size=0;
-unsigned char  SPI_Rx_Size=0;
+//unsigned char  SPI_Tx_Size=0;
+//unsigned char  SPI_Rx_Size=0;
 //-----定义发送/接收模式标志-----
 unsigned char SPI_Rx_Or_Tx =0;          // 0:仅接收    1：仅发送   2：收发
 /****************************************************************************
@@ -246,10 +267,14 @@ unsigned char SPI_Rx_Or_Tx =0;          // 0:仅接收    1：仅发送   2：收发
 ****************************************************************************/
 void SPI_init(void)
 {
+    //-----定义待发送/接收的字节数-----
+    SPI_Tx_Size=0;
+    SPI_Rx_Size=0;
     //-----管脚初始化为 SPI 功能-----
     SPI_SEL |= SPI_CLK + SPI_SOMI + SPI_SIMO;
     SPI_SEL2 |= SPI_CLK + SPI_SOMI + SPI_SIMO;
     SPI_DIR |= SPI_CLK + SPI_SIMO;
+
     //-----SD 卡SPI模式下，需要将SOMI加上拉电阻-----
     SPI_REN |= SPI_SOMI;
     SPI_OUT |= SPI_SOMI;
@@ -261,18 +286,18 @@ void SPI_init(void)
     //-----复位UCA0-----
     UCA0CTL1 |= UCSWRST;
     //-----3-pin, 8-bit SPI 主机模式- 上升沿----
-    UCA0CTL0 = UCCKPL + UCMSB + UCMST + UCMODE_0 + UCSYNC;
+    UCA0CTL0 = UCCKPH + UCMSB + UCMST + UCMODE_0 + UCSYNC;
     //-----时钟选择SMCLK，MSB first-----
     UCA0CTL1 = UCSWRST + UCSSEL_2;
-    //-----f_UCxCLK = 12MHz/50 = 240kHz-----
-    UCA0BR0 = 50;
+    //-----f_UCxCLK = 16MHz/16 = 1MHz-----
+    UCA0BR0 = 16;
     UCA0BR1 = 0;
     UCA0MCTL = 0;
     //-----开启UCA0-----
     UCA0CTL1 &= ~UCSWRST;
     //-----清除中断标志位-----
     IFG2 &= ~(UCA0RXIFG+UCA0TXIFG );
-    __bis_SR_register(GIE);
+   // __bis_SR_register(GIE);
 }
 /****************************************************************************
 * 名       称：SPI_CS_High()
@@ -346,7 +371,7 @@ unsigned char SPI_RxFrame(unsigned char  *pBuffer, unsigned int size)
     SPI_Rx_Size = size-1;                                               // 待发送的数据个数
     SPI_Interrupt_Sel(SPI_Rx_Or_Tx);                            // SPI中断开启选择
     _enable_interrupts();                                               // 开总中断
-    UCA0TXBUF = 0xff;                                                   // 在接收模式下，也要先发送一次空字节，以便提供通信时钟。
+    UCA0TXBUF = 0x00;                                                   // 在接收模式下，也要先发送一次空字节，以便提供通信时钟。
     _bis_SR_register(LPM0_bits);                                    // 进入低功耗模式0
     return (1);
 }
@@ -408,8 +433,10 @@ __interrupt void USCI0RX_ISR_HOOK(void)
     //-----接收中断事件引擎函数-----
      SPI_RxISR();
     //-----判断此次操作是否完成，完成则退出低功耗-----
-     if(SPI_Rx_Size==0)
-    _bic_SR_register_on_exit(LPM0_bits);
+     if(SPI_Rx_Size==0){
+         _bic_SR_register_on_exit(LPM0_bits);
+     }
+
 }
 /******************************************************************************************************
  * 名       称：SPI_RxISR()
@@ -463,7 +490,7 @@ static void SPI_TxISR()
 void SPI_HighSpeed()
 {
     UCA0CTL1 |= UCSWRST;
-    UCA0BR0 = 2;                                // f_UCxCLK = 12MHz/2 = 6MHz
+    UCA0BR0 = 2;                                // f_UCxCLK = 16MHz/2 = 8MHz
     UCA0BR1 = 0;
     UCA0MCTL = 0;
     UCA0CTL1 &= ~UCSWRST;

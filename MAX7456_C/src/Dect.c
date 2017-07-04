@@ -16,9 +16,9 @@ void Dect(void){
     //write_node_B();
 
     if((P1IN&BIT3)){
-        write_node_B();
+        write_node_C();
     }else{
-        write_node_B_clear();
+        write_node_C_clear();
     }
 
 }

@@ -7,14 +7,19 @@
 #include "global.h"
 
 void Dect_init(void){
-    P1DIR &= ~BIT6;
+    P1DIR &= ~BIT3;
+    P1OUT&=~BIT3;
 }
 
 void Dect(void){
-    if((P1IN&BIT6)==BIT6){
-        write_node_B_clear();
-    }else{
+    //test_node_B();
+    //write_node_B();
+
+    if((P1IN&BIT3)){
         write_node_B();
+    }else{
+        write_node_B_clear();
     }
+
 }
 
