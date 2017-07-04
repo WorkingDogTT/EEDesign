@@ -8,16 +8,27 @@
 
 
 unsigned char write_max7456(unsigned char *address, unsigned char *data){
-    (*address)=(*address)&0x7F;
-    SPI_TxFrame(address,1);
-    SPI_TxFrame(data,1);
+
+    unsigned char sendBuff[2];
+    sendBuff[0]=(*address);
+    sendBuff[1]=(*data);
+    SPI_CS_High();
+    __delay_cycles(16);
+    SPI_CS_Low();
+    while(!SPI_TxFrame(sendBuff,2));
+    while(UCA0STAT & UCBUSY);
     return 1;
 }
 
 unsigned char read_max7456(unsigned char *address, unsigned char *data){
-    (*address)=(*address) | 0x80;
-    SPI_TxFrame(address,1);
-    SPI_RxFrame(data,1);
+   // SPI_CS_Low();
+    SPI_CS_High();
+   __delay_cycles(16);
+   SPI_CS_Low();
+    while(!SPI_TxFrame(address,1));
+    while(UCA0STAT & UCBUSY);
+    while(!SPI_RxFrame(data,1));
+    while(UCA0STAT & UCBUSY);
     return 1;
 }
 

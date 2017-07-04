@@ -11,10 +11,14 @@ void Dect_init(void){
 }
 
 void Dect(void){
+    //test_node_B();
+    write_node_B();
+/*
     if((P1IN&BIT3)!=BIT3){
-        write_node_B_clear();
+        write_node_B();
     }else{
         write_node_B();
     }
+*/
 }
 
