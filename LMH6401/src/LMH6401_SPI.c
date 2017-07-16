@@ -16,7 +16,7 @@ unsigned char write_lmh6401(unsigned char *address, unsigned char *data){
     __delay_cycles(16);
     SPI_CS_Low();
     while(!SPI_TxFrame(sendBuff,2));
-    while(UCA0STAT & UCBUSY);
+    while(UCB0STAT & UCBUSY);
     SPI_CS_High();
     return 1;
 }
@@ -26,9 +26,9 @@ unsigned char read_lmh6401(unsigned char *address, unsigned char *data){
    __delay_cycles(16);
    SPI_CS_Low();
     while(!SPI_TxFrame(address,1));
-    while(UCA0STAT & UCBUSY);
+    while(UCB0STAT & UCBUSY);
     while(!SPI_RxFrame(data,1));
-    while(UCA0STAT & UCBUSY);
+    while(UCB0STAT & UCBUSY);
     SPI_CS_High();
     return 1;
 }

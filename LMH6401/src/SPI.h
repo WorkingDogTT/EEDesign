@@ -22,6 +22,9 @@ extern void SPI_LowSpeed(void);
 extern void SPI_init(void);
 extern unsigned char SPI_TxFrame(unsigned char  *pBuffer, unsigned int   size);
 extern unsigned char SPI_RxFrame(unsigned char  *pBuffer, unsigned int size);
-
+extern void SPI_Interrupt_Sel(unsigned char onOff);
+//-----提前申明事件处理函数-----
+extern void SPI_TxISR();
+extern void SPI_RxISR();
 
 #endif /* SRC_SPI_H_ */

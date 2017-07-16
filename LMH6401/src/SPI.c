@@ -231,11 +231,17 @@ void SPI_LowSpeed()
 #endif      //End of SOFT_SPI
 
 #ifdef HARD_SPI         //Begin of HRAD_SPI
-
+//使用USCIB0作为SPI的控制脚
 //-----硬件SPI管脚宏定义-----
+/*
 #define SPI_SIMO            BIT2        //1.2
 #define SPI_SOMI            BIT1        //1.1
 #define SPI_CLK             BIT4        //1.4
+#define SPI_CS              BIT4        //P2.4
+*/
+#define SPI_SIMO            BIT7       //1.7
+#define SPI_SOMI            BIT6        //1.6
+#define SPI_CLK             BIT5        //1.5
 #define SPI_CS              BIT4        //P2.4
 //-----硬件SPI控制端口宏定义-----
 #define SPI_SEL2            P1SEL2
@@ -284,19 +290,19 @@ void SPI_init(void)
     SPI_CS_OUT |= SPI_CS;
     SPI_CS_DIR  |= SPI_CS;
     //-----复位UCA0-----
-    UCA0CTL1 |= UCSWRST;
+    UCB0CTL1 |= UCSWRST;
     //-----3-pin, 8-bit SPI 主机模式- 上升沿----
-    UCA0CTL0 = UCCKPH + UCMSB + UCMST + UCMODE_0 + UCSYNC;
+    UCB0CTL0 = UCCKPH + UCMSB + UCMST + UCMODE_0 + UCSYNC;
     //-----时钟选择SMCLK，MSB first-----
-    UCA0CTL1 = UCSWRST + UCSSEL_2;
+    UCB0CTL1 = UCSWRST + UCSSEL_2;
     //-----f_UCxCLK = 16MHz/16 = 1MHz-----
-    UCA0BR0 = 16;
-    UCA0BR1 = 0;
-    UCA0MCTL = 0;
+    UCB0BR0 = 16;
+    UCB0BR1 = 0;
+    //UCA0MCTL = 0;
     //-----开启UCA0-----
-    UCA0CTL1 &= ~UCSWRST;
+    UCB0CTL1 &= ~UCSWRST;
     //-----清除中断标志位-----
-    IFG2 &= ~(UCA0RXIFG+UCA0TXIFG );
+    IFG2 &= ~(UCB0RXIFG+UCB0TXIFG );
    // __bis_SR_register(GIE);
 }
 /****************************************************************************
@@ -337,18 +343,18 @@ void SPI_Interrupt_Sel(unsigned char onOff)
 {
     if(onOff == 0)                      // 只开接收中断
     {
-          IE2 &=~UCA0TXIE ;
-          IE2 |= UCA0RXIE ;
+          IE2 &=~UCB0TXIE ;
+          IE2 |= UCB0RXIE ;
     }
     else    if(onOff==1)                // 只开启发送中断
     {
-          IE2 &=~UCA0RXIE ;
-          IE2 |= UCA0TXIE ;
+          IE2 &=~UCB0RXIE ;
+          IE2 |= UCB0TXIE ;
     }
     else                                        //收发全开
     {
-         IE2 |= UCA0RXIE ;
-         IE2 |= UCA0TXIE ;
+         IE2 |= UCB0RXIE ;
+         IE2 |= UCB0TXIE ;
     }
 }
 /****************************************************************************
@@ -371,8 +377,8 @@ unsigned char SPI_RxFrame(unsigned char  *pBuffer, unsigned int size)
     SPI_Rx_Size = size-1;                                               // 待发送的数据个数
     SPI_Interrupt_Sel(SPI_Rx_Or_Tx);                            // SPI中断开启选择
     _enable_interrupts();                                               // 开总中断
-    UCA0TXBUF = 0x00;                                                   // 在接收模式下，也要先发送一次空字节，以便提供通信时钟。
-    _bis_SR_register(LPM0_bits);                                    // 进入低功耗模式0
+    UCB0TXBUF = 0x00;                                                   // 在接收模式下，也要先发送一次空字节，以便提供通信时钟。
+   // _bis_SR_register(LPM0_bits);                                    // 进入低功耗模式0
     return (1);
 }
 /****************************************************************************
@@ -388,56 +394,19 @@ unsigned char SPI_RxFrame(unsigned char  *pBuffer, unsigned int size)
 unsigned char SPI_TxFrame(unsigned char  *pBuffer, unsigned int  size)
 {
     if(size==0)                                 return (1);
-    if(UCA0STAT & UCBUSY)           return  (0);            // 判断硬件SPI正忙，返回0
+    if(UCB0STAT & UCBUSY)           return  (0);            // 判断硬件SPI正忙，返回0
     _disable_interrupts();                                          // 关闭总中断
     SPI_Rx_Or_Tx = 1;                                                   // 开启发送模式
     SPI_Tx_Buffer = pBuffer;                                        // 将发送缓存指向待发送的数组地址
     SPI_Tx_Size = size-1;                                               // 待发送的数据个数
     SPI_Interrupt_Sel(SPI_Rx_Or_Tx);                            // SPI中断开启选择
     _enable_interrupts();                                               // 开总中断
-    UCA0TXBUF = *SPI_Tx_Buffer;                             // 先发送第一个字节人工触发第一次"发送"中断
-    _bis_SR_register(LPM0_bits);                                    // 进入低功耗模式0
+    UCB0TXBUF = *SPI_Tx_Buffer;                             // 先发送第一个字节人工触发第一次"发送"中断
+    //_bis_SR_register(LPM0_bits);                                    // 进入低功耗模式0
     return (1);
 }
-//-----提前申明事件处理函数-----
-static void SPI_TxISR();
-static void SPI_RxISR();
-/******************************************************************************************************
- * 名       称：USCI0TX_ISR_HOOK()
- * 功       能：响应Tx中断服务
- * 入口参数：无
- * 出口参数：无
- * 说       明：包含唤醒主循环CPU的代码
- * 范       例：无
- ******************************************************************************************************/
-#pragma vector=USCIAB0TX_VECTOR
-__interrupt void USCI0TX_ISR_HOOK(void)
-{
-    //-----发送中断事件引擎函数-----
-    SPI_TxISR();
-    //-----判断此次操作是否完成，完成则退出低功耗-----
-     if(SPI_Tx_Size==0)
-    _bic_SR_register_on_exit(LPM0_bits);
-}
-/******************************************************************************************************
- * 名       称：USCI0RX_ISR_HOOK()
- * 功       能：响应Rx中断服务
- * 入口参数：无
- * 出口参数：无
- * 说       明：包含唤醒主循环CPU的代码
- * 范       例：无
- ******************************************************************************************************/
-#pragma vector=USCIAB0RX_VECTOR
-__interrupt void USCI0RX_ISR_HOOK(void)
-{
-    //-----接收中断事件引擎函数-----
-     SPI_RxISR();
-    //-----判断此次操作是否完成，完成则退出低功耗-----
-     if(SPI_Rx_Size==0){
-         _bic_SR_register_on_exit(LPM0_bits);
-     }
 
-}
+
 /******************************************************************************************************
  * 名       称：SPI_RxISR()
  * 功       能：SPI的Rx事件处理函数
@@ -446,17 +415,17 @@ __interrupt void USCI0RX_ISR_HOOK(void)
  * 说       明：对接收到的数据，区别对待进行处理
  * 范       例：无
  ******************************************************************************************************/
-static void SPI_RxISR()
+void SPI_RxISR()
 {
 
-    *SPI_Rx_Buffer = UCA0RXBUF;                             //  读取接收缓存，同时，用于清除“UCA0RXIFG”中断标志位
+    *SPI_Rx_Buffer = UCB0RXBUF;                             //  读取接收缓存，同时，用于清除“UCA0RXIFG”中断标志位
     if(SPI_Rx_Size!=0)
     {
         SPI_Rx_Size-- ;                                                     // 待发送的数据减1
         SPI_Rx_Buffer++;                                                // 接收指针向下一字节偏移
-        UCA0TXBUF = 0xff;                                               // 纯粹为了提供CLK。UCA0TXIFG标志位同时被清除。
+        UCB0TXBUF = 0xff;                                               // 纯粹为了提供CLK。UCA0TXIFG标志位同时被清除。
     }
-    IFG2 &= ~UCA0TXIFG;                                             // 清除发送中断标志位
+    IFG2 &= ~UCB0TXIFG;                                             // 清除发送中断标志位
 
 }
 /******************************************************************************************************
@@ -467,17 +436,17 @@ static void SPI_RxISR()
  * 说       明：对接收到的数据，区别对待进行处理
  * 范       例：无
  ******************************************************************************************************/
-static void SPI_TxISR()
+void SPI_TxISR()
 {
-    UCA0RXBUF;                                                          // Tx和Rx中断标志位都会置位。此处对UCA0RXBUF空操作，用于清除“UCA0RXIFG”中断标志位
+    UCB0RXBUF;                                                          // Tx和Rx中断标志位都会置位。此处对UCA0RXBUF空操作，用于清除“UCA0RXIFG”中断标志位
     if(SPI_Tx_Size!=0)
     {
         SPI_Tx_Size-- ;                                                     // 待发送的数据减1
         SPI_Tx_Buffer++;                                            // 发送指针向下一字节偏移
-        UCA0TXBUF = *SPI_Tx_Buffer;                         // 放入发送缓存，同时，用于清除“UCA0TXIFG”中断标志位
+        UCB0TXBUF = *SPI_Tx_Buffer;                         // 放入发送缓存，同时，用于清除“UCA0TXIFG”中断标志位
     }
     else
-        IFG2 &= ~UCA0TXIFG;                                         // 最后一次，由于不对UCA0TXBUF进行操作，需要人为清除发送中断标志位
+        IFG2 &= ~UCB0TXIFG;                                         // 最后一次，由于不对UCA0TXBUF进行操作，需要人为清除发送中断标志位
 }
 /****************************************************************************
 * 名       称：SPI_HighSpeed()
@@ -489,11 +458,11 @@ static void SPI_TxISR()
 ****************************************************************************/
 void SPI_HighSpeed()
 {
-    UCA0CTL1 |= UCSWRST;
-    UCA0BR0 = 2;                                // f_UCxCLK = 16MHz/2 = 8MHz
-    UCA0BR1 = 0;
-    UCA0MCTL = 0;
-    UCA0CTL1 &= ~UCSWRST;
+    UCB0CTL1 |= UCSWRST;
+    UCB0BR0 = 2;                                // f_UCxCLK = 16MHz/2 = 8MHz
+    UCB0BR1 = 0;
+   // UCB0MCTL = 0;
+    UCB0CTL1 &= ~UCSWRST;
 }
 /****************************************************************************
 * 名       称：SPI_LowSpeed()
@@ -505,10 +474,10 @@ void SPI_HighSpeed()
 ****************************************************************************/
 void SPI_LowSpeed()
 {
-    UCA0CTL1 |= UCSWRST;
-    UCA0BR0 =50;                                // f_UCxCLK = 12MHz/50 = 240KHz
-    UCA0BR1 = 0;
-    UCA0MCTL = 0;
-    UCA0CTL1 &= ~UCSWRST;
+    UCB0CTL1 |= UCSWRST;
+    UCB0BR0 =50;                                // f_UCxCLK = 12MHz/50 = 240KHz
+    UCB0BR1 = 0;
+  //  UCB0MCTL = 0;
+    UCB0CTL1 &= ~UCSWRST;
 }
 #endif  //end of HARD_SPI

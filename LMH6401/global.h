@@ -16,9 +16,22 @@
 #include "SPI.h"
 #include "src/LMH6401.h"
 #include "SystemUtils.h"
-#include "Dect.h"
+#include "uart.h"
+#include "USART_HMI.h"
 
 unsigned char address;
 unsigned char data;
+unsigned char control_data;
+unsigned char control_data_bit3;
+unsigned char gain_value;
+
+
+unsigned char RecvBuffIndex;
+unsigned char recvBuff[10];
+unsigned char stopbitsCount;
+
+
+unsigned char state;
+
 
 #endif /* GLOBAL_H_ */
