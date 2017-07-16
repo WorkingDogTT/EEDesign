@@ -49,7 +49,6 @@ void UART_OnTX(char *pbuf,unsigned char length){
 }
 
 void UART_OnRX(){
-    static int stopbitsCount=0;
     recvBuff[RecvBuffIndex]=UCA0RXBUF;
     if(recvBuff[RecvBuffIndex]==0xFF) {
         stopbitsCount++;

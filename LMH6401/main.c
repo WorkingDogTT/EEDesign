@@ -14,7 +14,10 @@ int main(void) {
     BCSCTL3 = XT2S_0 | LFXT1S_2 | XCAP_3;//ACLK 为12MHZ
     BCSCTL2 &= ~SELS;
     BCSCTL2 = DIVS_3;//SMCLK 为 16MHz/8=2MHz
-    state=0;
+    //初始化各变量的值
+    state=0x00;
+    RecvBuffIndex=0x00;
+    stopbitsCount=0;
     SPI_init();
     UART_init();
     __bis_SR_register(GIE);//打开全局中断

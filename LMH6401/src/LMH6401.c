@@ -6,13 +6,15 @@
  */
 #include "global.h"
 void test_lmh6401(void){
+    /*这个是读取
     address=0x80;
    data=0x10;
    read_lmh6401(&address,&data);
    data=data;
    _nop();
+   */
     address=0x02;
-    data=control_data;
+    data=gain_value;
    //read_lmh6401(&address,&data);
     write_lmh6401(&address,&data);
     address=0x04;

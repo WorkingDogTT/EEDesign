@@ -21,8 +21,6 @@
 
 unsigned char address;
 unsigned char data;
-unsigned char control_data;
-unsigned char control_data_bit3;
 unsigned char gain_value;
 
 
