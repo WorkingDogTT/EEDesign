@@ -22,6 +22,7 @@
 #include "USART_HMI.h"
 #include "FPGA.h"
 #include "FPGA_SPI.h"
+#include "GPIO.h"
 
 unsigned char address;
 unsigned char data;

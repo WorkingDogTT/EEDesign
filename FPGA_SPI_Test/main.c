@@ -20,6 +20,7 @@ int main(void) {
     stopbitsCount=0;
     SPI_init();
     UART_init();
+    init_GPIO();
     _enable_interrupts();
     while(1){
         switch(state){
@@ -103,3 +104,22 @@ __interrupt void USCI0RX_ISR_HOOK(void)
 
 }
 
+
+#pragma vector = PORT2_VECTOR
+__interrupt void Port2_ISR(void)
+{
+    if(P2IFG & BIT0)//判断是否是P1.3产生中断
+    {
+        P2IFG &= ~BIT0;//清除标志位
+        if(state == 0x02)
+             state=0x03;
+        else
+            state = 0x01;
+    }else if(P2IFG & BIT1){
+        P2IFG &=~ BIT1;
+        if(state == 0x01)
+            state = 0x04;
+        else
+            state = 0x02;
+    }
+}
