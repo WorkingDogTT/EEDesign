@@ -84,10 +84,10 @@ void getFreq(void){
    temp_data3=data;
    Freq_Ref_250_4=temp_data0+temp_data1*256+temp_data2*65536+temp_data3*16777216;
 
-   long_temp0 = Freq_Ref_250_1 + Freq_Ref_250_1 + Freq_Ref_250_1 + Freq_Ref_250_1;
+   long_temp0 = Freq_Ref_250_1 + Freq_Ref_250_2 + Freq_Ref_250_3 + Freq_Ref_250_4;
    if(long_temp0 != 0){
-       long_temp0 = long_temp0 / 2;
-       Freq_250_result = Signal_Rise_Count / long_temp0 * 2.0;
+       long_temp0 = long_temp0 / 4;
+       Freq_250_result = (double)Signal_Rise_Count / (double)long_temp0 * 250000000.0;
    }
 
    //取参考频率10MHZ_1计数值
@@ -150,12 +150,12 @@ void getFreq(void){
      temp_data3=data;
      Freq_Ref_10_4=temp_data0+temp_data1*256+temp_data2*65536+temp_data3*16777216;
 
-     long_temp0 = Freq_Ref_10_1 + Freq_Ref_10_1 + Freq_Ref_10_1 + Freq_Ref_10_1;
+     long_temp0 = Freq_Ref_10_1 + Freq_Ref_10_2 + Freq_Ref_10_3 + Freq_Ref_10_4;
      if(long_temp0 != 0){
-         long_temp0 = long_temp0 / 2;
-         Freq_10_result = Signal_Rise_Count / long_temp0 * 2.0;
+         long_temp0 = long_temp0 / 4;
+         Freq_10_result = (double)Signal_Rise_Count / (double)long_temp0 * 10000000.0;
      }
-
+     _nop();
 
 }
 
@@ -192,6 +192,6 @@ void getDuty(void){
 
     long_temp0 = Duty_H_counter + Duty_L_counter;
     if(long_temp0 != 0)
-        Duty_Result = Duty_H_counter / long_temp0 *100.0;
+        Duty_Result = (double)Duty_H_counter / (double)long_temp0 *100.0;
 }
 

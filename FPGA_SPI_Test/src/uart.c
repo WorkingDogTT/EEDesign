@@ -19,13 +19,14 @@ void UART_init(){
         UCA0CTL0 &= ~UCSYNC;
         //=====设置UART时钟源为外置晶振有更高的准确率======//
         //UCA0BR0 = 0x16 ;        //2M/115200=17.36          UCBRx=  INT(17.36)=17
-        UCA0BR0=0x08;
+        UCA0BR0=0xAD;
         UCA0BR1 = 0x00;         //未知时钟源的设定   ACLK？ UCLK？
-        UCA0CTL1 |= UCSSEL_3;   //选择MCLK时钟源作为BRCLK
+        UCA0CTL1 |= UCSSEL_2;   //选择MCLK时钟源作为SMCLK
         //ACLK设置方式为：UCA0BR1 = UCSSEL_1
-        UCA0MCTL = UCBRS_0|UCBRF_11;    //UCBRSx=round((17.36-17)x8)=round(2.88)=3
+        UCA0MCTL = UCBRS_3;    //UCBRSx=round((17.36-17)x8)=round(2.88)=3
         UCA0CTL1 &= ~UCSWRST;          //清除软件复位
-        IE2 |= UCA0RXIE ;    //开启接收中断
+        //这次不用接收功能，不启用接收中断
+        //IE2 |= UCA0RXIE ;    //开启接收中断
         //清空接收中断标志
         IFG2 &= ~UCA0RXIFG;
 }
@@ -34,14 +35,13 @@ void UART_init(){
 void UART_OnTX(char *pbuf,unsigned char length){
     unsigned char i;
     for(i=0;i<length;i++){
-        if(*(pbuf + i)==0x00){
+        if(*(pbuf+i)==0x00){
             break;
         }else{
             while(UCA0STAT & UCBUSY);
             UCA0TXBUF = *(pbuf + i);
             *(pbuf + i)=0x00;
         }
-
     }
     //自动加上三位0xFF
     for(i=0;i<3;i++){

@@ -34,7 +34,7 @@ unsigned char RecvBuffIndex;
 unsigned char recvBuff[1];
 unsigned char SendBuffIndex;
 unsigned char sendBuffLength;
-char sendBuff[25];
+char sendBuff[30];
 unsigned char stopbitsCount;
 unsigned char temp_data_1;
 
@@ -66,6 +66,7 @@ unsigned int High_bits;
 unsigned int Low_bits;
 
 int bytes[9];
+int xiaoshu_bytes[6];
 
 
 double Freq_250_result;

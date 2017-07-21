@@ -46,6 +46,9 @@ int main(void) {
             break;
         }
         _nop();
+        getDuty();
+        getFreq();
+        display();
     }
 	return 0;
 }
@@ -108,6 +111,7 @@ __interrupt void USCI0RX_ISR_HOOK(void)
 #pragma vector = PORT2_VECTOR
 __interrupt void Port2_ISR(void)
 {
+    _disable_interrupt();
     if(P2IFG & BIT0)//判断是否是P1.3产生中断
     {
         P2IFG &= ~BIT0;//清除标志位
@@ -122,4 +126,5 @@ __interrupt void Port2_ISR(void)
         else
             state = 0x02;
     }
+    _enable_interrupt();
 }
