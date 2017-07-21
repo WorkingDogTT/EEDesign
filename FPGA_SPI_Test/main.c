@@ -27,9 +27,18 @@ int main(void) {
             _nop();
             break;
         case 0x01:
-            gain_value=recvBuff[1];
-            test_lmh6401();
+            getFreq();
             state=0x00;
+            break;
+        case 0x02:
+            getDuty();
+            state=0x00;
+            break;
+        case 0x03:
+            state=0x01;
+            break;
+        case 0x04:
+            state=0x02;
             break;
         default:
             _nop();

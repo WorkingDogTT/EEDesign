@@ -29,6 +29,8 @@ unsigned char recvBuff[10];
 unsigned char stopbitsCount;
 
 
+
+
 unsigned char state;
 
 

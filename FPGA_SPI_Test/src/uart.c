@@ -43,6 +43,7 @@ void UART_OnTX(char *pbuf,unsigned char length){
         }
 
     }
+    //自动加上三位0xFF
     for(i=0;i<3;i++){
         while(UCA0STAT & UCBUSY);
         UCA0TXBUF = 0xFF;
@@ -57,7 +58,7 @@ void UART_OnRX(){
         stopbitsCount=0;
     }
     if(stopbitsCount>=3||RecvBuffIndex>=9){
-        cmdMatch();
+        //cmdMatch();这个应用不需要管屏幕发出来的数据
         RecvBuffIndex=0;
     }else {
         RecvBuffIndex++;
